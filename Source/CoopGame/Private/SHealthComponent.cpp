@@ -43,6 +43,9 @@ void USHealthComponent::HandleTakeAnyDamage(AActor*DamagedActor, float Damage, c
 	UE_LOG(LogTemp, Warning, TEXT("血量改变: %s"), *FString::SanitizeFloat(Health));
 
 	// 触发蓝图事件OnHealthChanged
+	// 通过父组件的OnTakeAnyDamage.AddDynamic方法,进入HandleTakeAnyDamage()
+	// 再通过Broadcast方法,触发(增加此组件的)HealthComp->OnHealthChanged.AddDynamic绑定的方法
+	// 最开始触发的源头是角色OnTakeAnyDamage
 	OnHealthChanged.Broadcast(this, Health, Damage, DamageType, InstigatedBy, DamageCauser);
 }
 

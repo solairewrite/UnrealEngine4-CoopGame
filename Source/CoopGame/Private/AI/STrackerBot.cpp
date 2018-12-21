@@ -24,9 +24,15 @@ ASTrackerBot::ASTrackerBot()
 	MeshComp->SetSimulatePhysics(true);
 	RootComponent = MeshComp;
 
+	HealthComp = CreateDefaultSubobject<USHealthComponent>("HealthComp");
+	HealthComp->OnHealthChanged.AddDynamic(this, &ASTrackerBot::HandleTakeDamage);
+
 	bUseVelocityChange = true;
 	MovementForce = 1000;
 	RequiredDistanceToTarget = 100;
+
+	ExplosionDamage = 40.0f;
+	ExplosionRadius = 200.0f;
 }
 
 // Called when the game starts or when spawned
@@ -36,6 +42,29 @@ void ASTrackerBot::BeginPlay()
 
 	NextPathPoint = GetNextPathPoint();
 
+}
+
+void ASTrackerBot::HandleTakeDamage(USHealthComponent* OwingHealthComp, float Health, float HealthDalta, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser)
+{
+
+	if (MatInst == nullptr)
+	{
+		// 直接修改会导致,所有的Bot材质都被修改,Dynamic只修改这个
+		MatInst = MeshComp->CreateAndSetMaterialInstanceDynamicFromMaterial(0, MeshComp->GetMaterial(0));
+	}
+
+	if (MatInst)
+	{
+		// 根据变量名称设置材质蓝图中的变量
+		MatInst->SetScalarParameterValue("LastTimeDamageTaken", GetWorld()->TimeSeconds);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Health is %s of %s"), *FString::SanitizeFloat(Health), *GetName());
+
+	if (Health <= 0.0f)
+	{
+		SelfDestruct();
+	}
 }
 
 FVector ASTrackerBot::GetNextPathPoint()
@@ -54,6 +83,26 @@ FVector ASTrackerBot::GetNextPathPoint()
 	return GetActorLocation();
 }
 
+void ASTrackerBot::SelfDestruct()
+{
+	if (bExploded)
+	{
+		return;
+	}
+	bExploded = true;
+
+	UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionEffect, GetActorLocation());
+
+	TArray<AActor*> IgnoredActors;
+	IgnoredActors.Add(this);
+
+	UGameplayStatics::ApplyRadialDamage(this, ExplosionDamage, GetActorLocation(), ExplosionRadius, nullptr, IgnoredActors, this, GetInstigatorController(), true);
+
+	DrawDebugSphere(GetWorld(), GetActorLocation(), ExplosionRadius, 12, FColor::Red, false, 1.0f, 0, 1.0f);
+
+	Destroy();
+}
+
 // Called every frame
 void ASTrackerBot::Tick(float DeltaTime)
 {
@@ -66,7 +115,7 @@ void ASTrackerBot::Tick(float DeltaTime)
 		NextPathPoint = GetNextPathPoint();
 
 		// 调试文字
-		DrawDebugString(GetWorld(), GetActorLocation(), "Target Reached!");
+		//DrawDebugString(GetWorld(), GetActorLocation(), "Target Reached!");
 	}
 	else
 	{

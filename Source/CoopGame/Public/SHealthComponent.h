@@ -8,6 +8,7 @@
 
 // 配合UPROPERTY(),创建一个蓝图事件,通过.Broadcast触发
 // FOnHealthChangedSignature是代理名字
+// 通过这个宏定义的变量,可以AddDynamic
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_SixParams(FOnHealthChangedSignature, USHealthComponent*, HealthComp, float, Health, float, HealthDelta, const class UDamageType*, DamageType, class AController*, InstigatedBy, AActor*, DamageCauser);
 
 // 设置ClassCroup,在蓝图中分类
