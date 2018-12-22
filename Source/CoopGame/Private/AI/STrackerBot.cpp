@@ -9,6 +9,9 @@
 #include "AI/NavigationSystemBase.h"
 #include "NavigationSystem.h"
 #include "DrawDebugHelpers.h"
+#include "SCharacter.h"
+#include "Components/SphereComponent.h"
+#include "Sound/SoundCue.h"
 
 
 // Sets default values
@@ -27,12 +30,21 @@ ASTrackerBot::ASTrackerBot()
 	HealthComp = CreateDefaultSubobject<USHealthComponent>("HealthComp");
 	HealthComp->OnHealthChanged.AddDynamic(this, &ASTrackerBot::HandleTakeDamage);
 
+	SphereComp = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComp"));
+	SphereComp->SetSphereRadius(200.0f);
+	SphereComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	SphereComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+	SphereComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	SphereComp->SetupAttachment(RootComponent);
+
 	bUseVelocityChange = true;
 	MovementForce = 1000;
 	RequiredDistanceToTarget = 100;
 
 	ExplosionDamage = 40.0f;
 	ExplosionRadius = 200.0f;
+
+	SelfDamageInterval = 0.25f;
 }
 
 // Called when the game starts or when spawned
@@ -40,8 +52,11 @@ void ASTrackerBot::BeginPlay()
 {
 	Super::BeginPlay();
 
-	NextPathPoint = GetNextPathPoint();
-
+	// 多人游戏,客户端会因为没有导航组件而崩溃
+	if (Role == ROLE_Authority)
+	{
+		NextPathPoint = GetNextPathPoint();
+	}
 }
 
 void ASTrackerBot::HandleTakeDamage(USHealthComponent* OwingHealthComp, float Health, float HealthDalta, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser)
@@ -93,14 +108,28 @@ void ASTrackerBot::SelfDestruct()
 
 	UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionEffect, GetActorLocation());
 
-	TArray<AActor*> IgnoredActors;
-	IgnoredActors.Add(this);
+	UGameplayStatics::PlaySoundAtLocation(this, ExplodeSound, GetActorLocation());
 
-	UGameplayStatics::ApplyRadialDamage(this, ExplosionDamage, GetActorLocation(), ExplosionRadius, nullptr, IgnoredActors, this, GetInstigatorController(), true);
+	MeshComp->SetVisibility(false, true);
+	MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	DrawDebugSphere(GetWorld(), GetActorLocation(), ExplosionRadius, 12, FColor::Red, false, 1.0f, 0, 1.0f);
+	if (Role == ROLE_Authority)
+	{
+		TArray<AActor*> IgnoredActors;
+		IgnoredActors.Add(this);
 
-	Destroy();
+		UGameplayStatics::ApplyRadialDamage(this, ExplosionDamage, GetActorLocation(), ExplosionRadius, nullptr, IgnoredActors, this, GetInstigatorController(), true);
+
+		DrawDebugSphere(GetWorld(), GetActorLocation(), ExplosionRadius, 12, FColor::Red, false, 1.0f, 0, 1.0f);
+
+		//Destroy();
+		SetLifeSpan(2.0f); // 直接销毁可能导致客户端来不及播放爆炸效果
+	}
+}
+
+void ASTrackerBot::DamageSelf()
+{
+	UGameplayStatics::ApplyDamage(this, 20, GetInstigatorController(), this, nullptr);
 }
 
 // Called every frame
@@ -108,28 +137,51 @@ void ASTrackerBot::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	float DistanceToTarget = (GetActorLocation() - NextPathPoint).Size(); // 向量大小
-
-	if (DistanceToTarget <= RequiredDistanceToTarget)
+	if (Role == ROLE_Authority && !bExploded)
 	{
-		NextPathPoint = GetNextPathPoint();
+		float DistanceToTarget = (GetActorLocation() - NextPathPoint).Size(); // 向量大小
 
-		// 调试文字
-		//DrawDebugString(GetWorld(), GetActorLocation(), "Target Reached!");
+		// 到达一个目标点,设置新的目标点
+		if (DistanceToTarget <= RequiredDistanceToTarget)
+		{
+			NextPathPoint = GetNextPathPoint();
+
+			// 调试文字
+			//DrawDebugString(GetWorld(), GetActorLocation(), "Target Reached!");
+		}
+		else
+		{
+			FVector ForceDirection = NextPathPoint - GetActorLocation();
+			ForceDirection.Normalize();
+
+			ForceDirection *= MovementForce;
+
+			MeshComp->AddForce(ForceDirection, NAME_None, bUseVelocityChange);
+
+			//  调试射线
+			DrawDebugDirectionalArrow(GetWorld(), GetActorLocation(), GetActorLocation() + ForceDirection, 32, FColor::Yellow, false, 0.0f, 0, 1.0f);
+		}
+
+		// 调试球
+		DrawDebugSphere(GetWorld(), NextPathPoint, 20, 12, FColor::Yellow, false, 0.0f, 1.0f);
 	}
-	else
+}
+
+void ASTrackerBot::NotifyActorBeginOverlap(AActor* OtherActor)
+{
+	if (!bStartedSelfDestruction && !bExploded)
 	{
-		FVector ForceDirection = NextPathPoint - GetActorLocation();
-		ForceDirection.Normalize();
+		ASCharacter* PlayerPawn = Cast<ASCharacter>(OtherActor);
+		if (PlayerPawn)
+		{
+			if (Role == ROLE_Authority)
+			{
+				GetWorldTimerManager().SetTimer(TimerHandle_SelfDamage, this, &ASTrackerBot::DamageSelf, SelfDamageInterval, true, 0.0f);
+			}
 
-		ForceDirection *= MovementForce;
+			bStartedSelfDestruction = true;
 
-		MeshComp->AddForce(ForceDirection, NAME_None, bUseVelocityChange);
-
-		//  调试射线
-		DrawDebugDirectionalArrow(GetWorld(), GetActorLocation(), GetActorLocation() + ForceDirection, 32, FColor::Yellow, false, 0.0f, 0, 1.0f);
+			UGameplayStatics::SpawnSoundAttached(SelfDestructSound, RootComponent);
+		}
 	}
-
-	// 调试球
-	DrawDebugSphere(GetWorld(), NextPathPoint, 20, 12, FColor::Yellow, false, 0.0f, 1.0f);
 }
