@@ -56,6 +56,10 @@ void ASTrackerBot::BeginPlay()
 	if (Role == ROLE_Authority)
 	{
 		NextPathPoint = GetNextPathPoint();
+
+		// 计时器,每秒根据附近机器人数,更新PowerLevel
+		FTimerHandle TimerHandle_CheckPowerLevel;
+		GetWorldTimerManager().SetTimer(TimerHandle_CheckPowerLevel, this, &ASTrackerBot::OnCheckNearbyBots, 1.0f, true);
 	}
 }
 
@@ -89,7 +93,7 @@ FVector ASTrackerBot::GetNextPathPoint()
 	// .build.cs中添加"NavigationSystem"
 	UNavigationPath* NavPath = UNavigationSystemV1::FindPathToActorSynchronously(this, GetActorLocation(), PlayerPawn);
 
-	if (NavPath->PathPoints.Num() > 1)
+	if (NavPath && NavPath->PathPoints.Num() > 1)
 	{
 		return NavPath->PathPoints[1];
 	}
@@ -111,14 +115,17 @@ void ASTrackerBot::SelfDestruct()
 	UGameplayStatics::PlaySoundAtLocation(this, ExplodeSound, GetActorLocation());
 
 	MeshComp->SetVisibility(false, true);
-	MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	//MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	if (Role == ROLE_Authority)
 	{
 		TArray<AActor*> IgnoredActors;
 		IgnoredActors.Add(this);
 
-		UGameplayStatics::ApplyRadialDamage(this, ExplosionDamage, GetActorLocation(), ExplosionRadius, nullptr, IgnoredActors, this, GetInstigatorController(), true);
+		// 根据附近有几个机器人,增大伤害
+		float ActualDamage = ExplosionDamage + (ExplosionDamage*PowerLevel);
+
+		UGameplayStatics::ApplyRadialDamage(this, ActualDamage, GetActorLocation(), ExplosionRadius, nullptr, IgnoredActors, this, GetInstigatorController(), true);
 
 		DrawDebugSphere(GetWorld(), GetActorLocation(), ExplosionRadius, 12, FColor::Red, false, 1.0f, 0, 1.0f);
 
@@ -169,6 +176,8 @@ void ASTrackerBot::Tick(float DeltaTime)
 
 void ASTrackerBot::NotifyActorBeginOverlap(AActor* OtherActor)
 {
+	Super::NotifyActorBeginOverlap(OtherActor);
+
 	if (!bStartedSelfDestruction && !bExploded)
 	{
 		ASCharacter* PlayerPawn = Cast<ASCharacter>(OtherActor);
@@ -184,4 +193,53 @@ void ASTrackerBot::NotifyActorBeginOverlap(AActor* OtherActor)
 			UGameplayStatics::SpawnSoundAttached(SelfDestructSound, RootComponent);
 		}
 	}
+}
+
+void ASTrackerBot::OnCheckNearbyBots()
+{
+	// 检测附近AI的距离
+	const float Radius = 600;
+
+	// 创建临时Collision形状
+	FCollisionShape CollShape;
+	CollShape.SetSphere(Radius);
+
+	// 只检测Pawns(玩家和AI Bots)
+	FCollisionObjectQueryParams QueryParams;
+	// AI Bot 的Mesh组件,在BP中设置为PhysicsBody(默认是Physics Simulated Actors)
+	QueryParams.AddObjectTypesToQuery(ECC_PhysicsBody);
+	QueryParams.AddObjectTypesToQuery(ECC_Pawn);
+
+	TArray<FOverlapResult> Overlaps;
+	GetWorld()->OverlapMultiByObjectType(Overlaps, GetActorLocation(), FQuat::Identity, QueryParams, CollShape);
+
+	DrawDebugSphere(GetWorld(), GetActorLocation(), Radius, 12, FColor::White, false, 1.0f);
+
+	int32 NrOfBots = 0; // 其他Bot的数量
+	for (FOverlapResult Result : Overlaps)
+	{
+		// 检查是否与另一个Bot重叠(忽略玩家和其他的Bot)
+		ASTrackerBot* Bot = Cast<ASTrackerBot>(Result.GetActor());
+		if (Bot && Bot != this)
+		{
+			NrOfBots++;
+		}
+	}
+
+	const int32 MaxPowerLevel = 4;
+
+	PowerLevel = FMath::Clamp(NrOfBots, 0, MaxPowerLevel);
+
+	// 更新机器人Mesh
+	if (MatInst == nullptr)
+	{
+		MatInst = MeshComp->CreateAndSetMaterialInstanceDynamicFromMaterial(0, MeshComp->GetMaterial(0));
+	}
+	if (MatInst)
+	{
+		float Alpha = PowerLevel / (float)MaxPowerLevel;
+		MatInst->SetScalarParameterValue("PowerLevelAlpha", Alpha);
+	}
+
+	DrawDebugString(GetWorld(), FVector(0, 0, 0), FString::FromInt(PowerLevel), this, FColor::White, 1.0f, true);
 }

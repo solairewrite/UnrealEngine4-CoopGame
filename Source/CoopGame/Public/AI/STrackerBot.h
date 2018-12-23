@@ -86,4 +86,11 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
+
+protected:
+
+	void OnCheckNearbyBots();
+
+	// 爆炸等级,影响伤害和颜色
+	int32 PowerLevel;
 };
