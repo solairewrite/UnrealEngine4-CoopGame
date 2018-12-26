@@ -42,4 +42,7 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Events") // 可以作为事件,在蓝图中使用
 		FOnHealthChangedSignature OnHealthChanged;
+
+	UFUNCTION(BlueprintCallable, Category = "HealthComponent")
+		void Heal(float HealAmount);
 };
