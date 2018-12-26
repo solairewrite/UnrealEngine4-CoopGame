@@ -56,6 +56,12 @@ void USHealthComponent::HandleTakeAnyDamage(AActor*DamagedActor, float Damage, c
 	OnHealthChanged.Broadcast(this, Health, Damage, DamageType, InstigatedBy, DamageCauser);
 }
 
+// 标记为const,禁止修改任何变量,例如Health++非法
+float USHealthComponent::GetHealth() const
+{
+	return Health;
+}
+
 void USHealthComponent::Heal(float HealAmount)
 {
 	if (HealAmount <= 0 || Health <= 0)

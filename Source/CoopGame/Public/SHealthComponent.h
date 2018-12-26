@@ -40,6 +40,8 @@ protected:
 
 public:
 
+	float GetHealth() const;
+
 	UPROPERTY(BlueprintAssignable, Category = "Events") // 可以作为事件,在蓝图中使用
 		FOnHealthChangedSignature OnHealthChanged;
 
