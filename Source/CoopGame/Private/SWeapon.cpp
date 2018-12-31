@@ -31,7 +31,7 @@ ASWeapon::ASWeapon()
 	TracerTargetName = "Target"; // UE4中,P_SmokeTrial的Target.Distribution.ParameterName
 
 	BaseDamage = 20.0f;
-
+	BulletSpread = 2.0f;
 	RateOfFire = 600;
 
 	// Actor是否同步到客户端
@@ -70,6 +70,10 @@ void ASWeapon::Fire()
 
 		FVector ShotDirection = EyeRotation.Vector();
 
+		// 射击在一个锥体范围内
+		float HalfRad = FMath::DegreesToRadians(BulletSpread);
+		ShotDirection = FMath::VRandCone(ShotDirection, HalfRad, HalfRad);
+
 		FVector TraceEnd = EyeLocation + (ShotDirection * 10000);
 
 		FCollisionQueryParams QueryParams;
@@ -100,7 +104,7 @@ void ASWeapon::Fire()
 			}
 
 			// 只在服务器端计算伤害
-			UGameplayStatics::ApplyPointDamage(HitActor, ActualDamage, ShotDirection, Hit, MyOwner->GetInstigatorController(), this, DamageType);
+			UGameplayStatics::ApplyPointDamage(HitActor, ActualDamage, ShotDirection, Hit, MyOwner->GetInstigatorController(), MyOwner, DamageType);
 
 			PlayImpactEffects(SurfaceType, Hit.ImpactPoint);
 

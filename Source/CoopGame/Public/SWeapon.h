@@ -82,6 +82,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 		float RateOfFire;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = 0.0f))
+		float BulletSpread;
+
 	float TimeBetweenShots;
 
 	virtual void Fire();

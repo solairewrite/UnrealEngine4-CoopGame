@@ -96,6 +96,5 @@ protected:
 
 	FTimerHandle TimerHandle_RefreshPath;
 
-	// 定时任务不能有返回值
 	void RefreshPath();
 };
